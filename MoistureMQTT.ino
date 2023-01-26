@@ -1,6 +1,11 @@
 #include "wifi_settings.h"
 #include "WiFi.h"
 
+// TODO MQTT-Setup
+// TODO MQTT-Publishing
+// TODO Possible optimization: Measure battery and moisture at once
+// TODO Possible optimization: Put wifi-status just before publishing to mqtt instead of using time for measuring values
+
 #define uS_TO_S_FACTOR                      1000000  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP_S                     5        /* Time ESP32 will go to sleep (in seconds) */
 #define SENSOR_POLL_SLEEP_TIME_MS           50 /* Time to sleep when measuring values */
@@ -66,12 +71,12 @@ int get_battery_voltage() {
 
 void setup(){
   Serial.begin(115200);
-  
+
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP_S * uS_TO_S_FACTOR);
   Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP_S) + " Seconds");
 
   setup_pins();
-  //setup_wifi();
+  setup_wifi();
   setup_mqtt();
 
   int moisture = measure_soil_moisture();
