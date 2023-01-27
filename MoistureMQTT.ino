@@ -13,11 +13,12 @@ Adafruit_MQTT_Client mqtt_client(&client, broker, mqtt_port);
 Adafruit_MQTT_Publish mqtt_battery  = Adafruit_MQTT_Publish(&mqtt_client, "MoistureSensor/battery");
 Adafruit_MQTT_Publish mqtt_moisture = Adafruit_MQTT_Publish(&mqtt_client, "MoistureSensor/moisture");
 
-// TODO MQTT-Setup
-// TODO MQTT-Publishing
+// TODO MQTT-Publishing (only one value works)
 // TODO Possible optimization: Measure battery and moisture at once
 // TODO Possible optimization: Put wifi-status just before publishing to mqtt instead of using time for measuring values
-// TODO calibration? Or work later on raw data? https://makersportal.com/blog/2020/5/26/capacitive-soil-moisture-calibration-with-arduino
+// TODO calibration? Or work later on raw data? https://makersportal.com/blog/2020/5/26/capacitive-soil-moisture-calibration-with-arduino 
+// TODO              Work with MAX_MOISTURE_RAW and MIN_MOISTURE_RAW calc percentage and live with that (should be enough) -> is 100% dry or wet?
+// TODO battery: Measure 3 volts and use this as 100% if over, just use the 3 volt!
 
 #define uS_TO_S_FACTOR 1000000       /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP_S 5            /* Time ESP32 will go to sleep (in seconds) */
@@ -27,6 +28,13 @@ Adafruit_MQTT_Publish mqtt_moisture = Adafruit_MQTT_Publish(&mqtt_client, "Moist
 #define BATTERY_ANALOG_PIN 34
 #define MOISTURE_SENSOR_ANALOG_PIN 35
 #define MOISTURE_SENSOR_POWER_PIN 32
+
+#define MAX_MOISTURE_RAW = 123  // Measure the raw value in oversaturated soil and put it here
+#define MIN_MOISTURE_RAW = 0    // Measure the raw value in dry soil and put it here
+
+
+#define MAX_VOLTAGE_RAW = 123  // Measure 3 V(or 3.3) and put raw value here
+
 
 void setup_pins() {
   pinMode(BATTERY_ANALOG_PIN, INPUT);
@@ -46,26 +54,19 @@ void setup_wifi() {
 
 void setup_mqtt() {
   int8_t ret;
-  uint8_t retries = 3;
   while ((ret = mqtt_client.connect()) != 0) {  // connect will return 0 for connected
     Serial.println(mqtt_client.connectErrorString(ret));
     Serial.println("Retrying MQTT connection in 5 seconds...");
     mqtt_client.disconnect();
-    delay(5000);  // wait 5 seconds
-    retries--;
-    if (retries == 0) {
-      // basically die and wait for WDT to reset me
-      while (1)
-        ;
-    }
+    delay(2500);  // wait 2.5 seconds
   }
   Serial.println("MQTT Connected!");
 }
 
 
 void send_to_mqtt(int moisture, int battery) {
-  int battery_send = mqtt_battery.publish(battery);
   int moisture_send = mqtt_moisture.publish(moisture);
+  int battery_send = mqtt_battery.publish(battery);
   if (!moisture_send) {
     Serial.println("Publishing moisture failed");
   } else {
@@ -105,7 +106,10 @@ int measure_soil_moisture() {
 }
 
 int get_battery_voltage() {
-  return read_analog_values(BATTERY_ANALOG_PIN);
+  int value = random(0, 100); // TODO  read_analog_values(BATTERY_ANALOG_PIN);
+  Serial.print("Voltage:");
+  Serial.println(value);
+  return value;
 }
 
 void setup() {
