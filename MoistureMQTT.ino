@@ -4,8 +4,6 @@
 #include "Adafruit_MQTT_Client.h"
 
 const char broker[] = "192.168.178.28";
-const char topic[] = "real_unique_topic";
-const char topic2[] = "real_unique_topic_2";
 const int mqtt_port = 1883;
 WiFiClient client;
 Adafruit_MQTT_Client mqtt_client(&client, broker, mqtt_port);
@@ -13,7 +11,6 @@ Adafruit_MQTT_Client mqtt_client(&client, broker, mqtt_port);
 Adafruit_MQTT_Publish mqtt_battery  = Adafruit_MQTT_Publish(&mqtt_client, "MoistureSensor/battery");
 Adafruit_MQTT_Publish mqtt_moisture = Adafruit_MQTT_Publish(&mqtt_client, "MoistureSensor/moisture");
 
-// TODO MQTT-Publishing (only one value works)
 // TODO Possible optimization: Measure battery and moisture at once
 // TODO Possible optimization: Put wifi-status just before publishing to mqtt instead of using time for measuring values
 // TODO calibration? Or work later on raw data? https://makersportal.com/blog/2020/5/26/capacitive-soil-moisture-calibration-with-arduino 
@@ -65,14 +62,15 @@ void setup_mqtt() {
 
 
 void send_to_mqtt(int moisture, int battery) {
-  int moisture_send = mqtt_moisture.publish(moisture);
-  int battery_send = mqtt_battery.publish(battery);
-  if (!moisture_send) {
+  int ret = mqtt_moisture.publish(moisture);
+  if (!ret) {
     Serial.println("Publishing moisture failed");
   } else {
     Serial.println("Publishing moisture went well!");
   }
-  if (!battery_send) {
+  delay(50);  // Somehow it's needed, else battery will be ignored. Bug in Adafruit library?
+  ret = mqtt_battery.publish(battery);
+  if (!ret) {
     Serial.println("Publishing voltage failed");
   } else {
     Serial.println("Publishing voltage went well!");
