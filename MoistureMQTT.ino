@@ -18,6 +18,7 @@
 #define MAX_VOLTAGE_RAW 0xFFF // DAC is 12bit resolution. So that's the maximum for measuring 3.3V
 #define MQTT_TOPIC "homeassistant/sensor/MoistureSensor"
 #define DEVICE_ID "1"
+#define COMMON_STATE_TOPIC MQTT_TOPIC DEVICE_ID "/state"
 
 const char broker[] = "192.168.178.28";
 const int mqtt_port = 1883;
@@ -25,11 +26,16 @@ const int mqtt_port = 1883;
 WiFiClient client;
 Adafruit_MQTT_Client mqtt_client(&client, broker, mqtt_port);
 
-Adafruit_MQTT_Publish mqtt_battery  = Adafruit_MQTT_Publish(&mqtt_client, MQTT_TOPIC DEVICE_ID "/battery");
-Adafruit_MQTT_Publish mqtt_moisture = Adafruit_MQTT_Publish(&mqtt_client, MQTT_TOPIC DEVICE_ID "/moisture");
+const char moisture_config [] = "{\"device_class\": \"moisture\", \"name\": \"Moisture\", \"state_topic\": \"" COMMON_STATE_TOPIC "\", \"unit_of_measurement\": \"%\", \"value_template\": \"{{ value_json.moisture}}\" }";
+const char battery_config []  = "{\"device_class\": \"battery\",  \"name\": \"Battery\",  \"state_topic\": \"" COMMON_STATE_TOPIC "\", \"unit_of_measurement\": \"%\", \"value_template\": \"{{ value_json.battery}}\" }";
+
+// Configuration for homeassitant: https://www.home-assistant.io/integrations/mqtt/
+Adafruit_MQTT_Publish mqtt_moisture_config = Adafruit_MQTT_Publish(&mqtt_client, MQTT_TOPIC DEVICE_ID "moisture/config"); // no slash infront of sensor
+Adafruit_MQTT_Publish mqtt_battery_config  = Adafruit_MQTT_Publish(&mqtt_client, MQTT_TOPIC DEVICE_ID "battery/config");  // no slash infront of sensor
+Adafruit_MQTT_Publish mqtt_common_state    = Adafruit_MQTT_Publish(&mqtt_client, COMMON_STATE_TOPIC);
 
 // TODO Possible optimization: Measure battery and moisture at once
-
+// !!! IMPORTANT !!! Manually change "MAXBUFFERSIZE" in "Adafruit_MQTT_Library\Adafruit_MQTT.h" or your mqtt-package will be stripped
 void setup_pins() {
   pinMode(BATTERY_ANALOG_PIN, INPUT);
   pinMode(MOISTURE_SENSOR_ANALOG_PIN, INPUT);
@@ -61,7 +67,38 @@ void setup_mqtt() {
 }
 
 
-void send_to_mqtt(int moisture, int battery) {
+void send_to_mqtt(int moisture, int battery) {  
+  int ret = mqtt_battery_config.publish(battery_config);
+  if (!ret) {
+      Serial.println("Publishing battery config failed");
+  } else {
+      Serial.println("Publishing battery config went well!");
+  }
+
+  delay(50);  // Somehow it's needed, else battery will be ignored. Bug in Adafruit library?
+
+  ret = mqtt_moisture_config.publish(moisture_config);
+  if (!ret) {
+      Serial.println("Publishing moisture config failed");
+  } else {
+      Serial.println("Publishing moisture config went well!");
+  }
+  
+  delay(50);  // Somehow it's needed, else battery will be ignored. Bug in Adafruit library?
+
+  // Finally publish sensor values
+  char buf[50];
+  String message = "{\"moisture\": " + String(moisture) + ", \"battery\":" + String(battery) + "}";
+  //String message = "{\"moisture\": 10.3, \"battery\": 9.1}";
+  Serial.println(message);
+  message.toCharArray(buf, message.length() + 1);
+  ret = mqtt_common_state.publish(buf);
+  if (!ret) {
+      Serial.println("Publishing payload failed");
+  } else {
+      Serial.println("Publishing payload went well!");
+  }
+/*
   int ret = mqtt_moisture.publish(moisture);
   if (!ret) {
     Serial.println("Publishing moisture failed");
@@ -74,7 +111,7 @@ void send_to_mqtt(int moisture, int battery) {
     Serial.println("Publishing voltage failed");
   } else {
     Serial.println("Publishing voltage went well!");
-  }
+  }*/
 }
 
 /// Takes x measurement-point in y seconds. Returns average of x measurments
