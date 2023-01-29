@@ -29,9 +29,7 @@ HASensorNumber mqtt_battery_sensor("battery", HASensorNumber::PrecisionP0);
 
 // TODO Possible optimization: Measure battery and moisture at once
 // TODO send raw moisture value for calibration -> set-min, set-max?  // if so, how to save them internally after power cut?
-// TODO battery of device is treated differently?
 
-// !!! IMPORTANT !!! Manually change "MAXBUFFERSIZE" in "Adafruit_MQTT_Library\Adafruit_MQTT.h" or your mqtt-package will be stripped
 void setup_pins() {
   pinMode(BATTERY_ANALOG_PIN, INPUT);
   pinMode(MOISTURE_SENSOR_ANALOG_PIN, INPUT);
@@ -60,10 +58,12 @@ void setup_mqtt() {
     mqtt_moisture_sensor.setName("Soil moisture");
     mqtt_moisture_sensor.setUnitOfMeasurement("%");
     mqtt_moisture_sensor.setIcon("mdi:water-percent");
+    mqtt_moisture_sensor.setDeviceClass("moisture");
 
     mqtt_battery_sensor.setName("Battery level");
     mqtt_battery_sensor.setUnitOfMeasurement("%");
     mqtt_battery_sensor.setIcon("mdi:battery");
+    mqtt_battery_sensor.setDeviceClass("battery");
 
     mqtt.begin(MQTT_BROKER_ADDRESS, MQTT_BROKER_PORT);
     mqtt.loop();
