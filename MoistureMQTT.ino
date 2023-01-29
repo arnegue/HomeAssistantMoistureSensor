@@ -248,7 +248,7 @@ void setup() {
 
   // Keep alive for x ms
   Serial.print("Keep alive for ");
-  Serial.print(KEEP_ALIVE_TIME_MS):
+  Serial.print(KEEP_ALIVE_TIME_MS);
   Serial.println(" ms");
   delay(KEEP_ALIVE_TIME_MS);
   
