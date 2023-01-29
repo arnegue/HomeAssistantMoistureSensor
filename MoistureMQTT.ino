@@ -221,7 +221,7 @@ int start_time;
 void setup() {
   int moisture_perc, moisture_raw, battery_perc, battery_raw;
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   
   preferences.begin(SENSOR_NAME, false);
   max_moisture_raw = preferences.getUShort("max", DEFAULT_MAX_MOISTURE_RAW);
