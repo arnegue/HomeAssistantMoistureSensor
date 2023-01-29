@@ -1,9 +1,8 @@
-#include "wifi_settings.h"
-#include "WiFi.h"
-#include <EEPROM.h>
+#include <WiFi.h>
+#include <Preferences.h>
 #include <ArduinoHA.h>
 
-#define EEPROM_SIZE 4                        // 4 bytes to safe: 2*uint16
+#include "wifi_settings.h"
 
 #define TIME_TO_SLEEP_S 5                    // Time ESP32 will go to sleep (in seconds)
 #define SENSOR_POLL_SLEEP_TIME_MS 50         // Time to sleep when measuring values
@@ -34,8 +33,7 @@ HANumber mqtt_moisture_min_raw("moisture_min_raw", HASensorNumber::PrecisionP0);
 // Following both values get stored in flash of ESP32, so they will still be there after powercycle (which wouldn't work with RTC_DATA_ATTR)
 #define DEFAULT_MAX_MOISTURE_RAW 1000
 #define DEFAULT_MIN_MOISTURE_RAW 2400
-#define MAX_EEPROM_ADDRESS 0
-#define MIN_EEPROM_ADDRESS 1
+Preferences preferences;   
 uint16_t max_moisture_raw = DEFAULT_MAX_MOISTURE_RAW;            // Measure the raw value in oversaturated soil and put it here
 uint16_t min_moisture_raw = DEFAULT_MIN_MOISTURE_RAW;            // Measure the raw value in dry soil and put it here
 
@@ -62,36 +60,40 @@ void wait_for_wifi() {
 
 void on_set_raw_min_max_callback(HANumeric number, HANumber* sender)
 {
-  int eeprom_addr = -1;
-  int eeprom_value = 0;
-    Serial.print("Setting number ");
-    Serial.println(sender->getName());
-    if (sender == &mqtt_moisture_min_raw) {
-      Serial.println("Setting min value");
-      eeprom_addr = MIN_EEPROM_ADDRESS;
-    } else if (sender == &mqtt_moisture_max_raw) {
-      Serial.println("Setting max value");
-      eeprom_addr = MAX_EEPROM_ADDRESS;
+  bool set_max;
+  int value = 0;
+  Serial.print("Setting number for sender: ");
+  Serial.print(sender->getName());
+  if (sender == &mqtt_moisture_max_raw) {
+    set_max = true;
+  }
+  else if (sender == &mqtt_moisture_min_raw) {
+    set_max = false;
+  } else {
+    Serial.println("I don't know who called!");
+    return;
+  }
+  
+  Serial.print(" with value ");
+  if (!number.isSet()) {
+    if (set_max) {
+      value = DEFAULT_MAX_MOISTURE_RAW;
     } else {
-      Serial.println("I don't know who called!");
-      return;
+      value = DEFAULT_MIN_MOISTURE_RAW;
     }
-    
-    Serial.print("Setting value ");
-    if (!number.isSet()) {
-      if (eeprom_addr == MIN_EEPROM_ADDRESS) {
-        eeprom_value = DEFAULT_MIN_MOISTURE_RAW;
-      } else {
-        eeprom_value = DEFAULT_MAX_MOISTURE_RAW;
-      }
-    } else {
-      eeprom_value = number.toInt16();
-    }
-    Serial.print(eeprom_value);
+  } else {
+    value = number.toInt16();
+  }
+  Serial.println(value);
 
-    EEPROM.write(eeprom_addr, eeprom_value);
-    EEPROM.commit();
-    sender->setState(number); // report the selected option back to the HA panel
+  preferences.begin(SENSOR_NAME, false);
+  if (set_max) {
+    max_moisture_raw = preferences.putUShort("max", value);
+  } else {
+    min_moisture_raw = preferences.putUShort("min", value);
+  }
+  preferences.end();
+  sender->setState(number); // report the selected option back to the HA panel
 }
 
 void setup_mqtt() {  
@@ -215,21 +217,16 @@ void get_battery_voltage(int* perc, int* raw) {
   Serial.println(*perc);
 }
 
+int start_time;
 void setup() {
   int moisture_perc, moisture_raw, battery_perc, battery_raw;
 
-  Serial.begin(115200);
+  Serial.begin(9600);
   
-  EEPROM.begin(EEPROM_SIZE);
-  max_moisture_raw = EEPROM.readUShort(MAX_EEPROM_ADDRESS);
-  if (max_moisture_raw == 0xFFFF) {
-    max_moisture_raw = DEFAULT_MAX_MOISTURE_RAW;
-  }
-  min_moisture_raw = EEPROM.readUShort(MIN_EEPROM_ADDRESS);
-  if (min_moisture_raw == 0xFFFF) {
-    min_moisture_raw = DEFAULT_MIN_MOISTURE_RAW;
-  }
-  // TODO write them into eeprom
+  preferences.begin(SENSOR_NAME, false);
+  max_moisture_raw = preferences.getUShort("max", DEFAULT_MAX_MOISTURE_RAW);
+  min_moisture_raw = preferences.getUShort("min", DEFAULT_MIN_MOISTURE_RAW);
+  preferences.end();
 
   // Enable deep sleep
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP_S * 1000000);
@@ -245,18 +242,16 @@ void setup() {
   wait_for_wifi();
   setup_mqtt();
   send_to_mqtt(moisture_perc, moisture_raw, battery_perc);
-
-  // Keep alive for x ms
-  Serial.print("Keep alive for ");
-  Serial.print(KEEP_ALIVE_TIME_MS);
-  Serial.println(" ms");
-  delay(KEEP_ALIVE_TIME_MS);
-  
-  // Go back to sleep
-  Serial.println("Going to sleep now");
-  Serial.flush();
-  esp_deep_sleep_start();
+  start_time = millis();
 }
 
 void loop() {
+  mqtt.loop();
+  if (millis() - start_time > KEEP_ALIVE_TIME_MS) {    
+    // Go back to sleep
+    Serial.println("Going to sleep now");
+    Serial.flush();
+    esp_deep_sleep_start();
+  }
+  delay(50);
 }
