@@ -1,38 +1,31 @@
 #include "wifi_settings.h"
 #include "WiFi.h"
-#include "Adafruit_MQTT.h"
-#include "Adafruit_MQTT_Client.h"
+#include <ArduinoHA.h>
 
-#define uS_TO_S_FACTOR 1000000       /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP_S 5            /* Time ESP32 will go to sleep (in seconds) */
-#define SENSOR_POLL_SLEEP_TIME_MS 50 /* Time to sleep when measuring values */
-#define MOISTURE_SENSOR_POWER_UP_TIME_MS 250
+#define TIME_TO_SLEEP_S 5                    // Time ESP32 will go to sleep (in seconds)
+#define SENSOR_POLL_SLEEP_TIME_MS 50         // Time to sleep when measuring values
+#define MOISTURE_SENSOR_POWER_UP_TIME_MS 250 // Time the moisture sensor needs to measure valid values 
 
 #define BATTERY_ANALOG_PIN 34
 #define MOISTURE_SENSOR_ANALOG_PIN 35
 #define MOISTURE_SENSOR_POWER_PIN 32
 
-#define MAX_MOISTURE_RAW 1000  // Measure the raw value in oversaturated soil and put it here
-#define MIN_MOISTURE_RAW 2400    // Measure the raw value in dry soil and put it here
+#define MAX_MOISTURE_RAW 1000                // Measure the raw value in oversaturated soil and put it here
+#define MIN_MOISTURE_RAW 2400                // Measure the raw value in dry soil and put it here
+#define MAX_VOLTAGE_RAW 0xFFF                // DAC is 12bit resolution. So that's the maximum for measuring 3.3V
 
-#define MAX_VOLTAGE_RAW 0xFFF // DAC is 12bit resolution. So that's the maximum for measuring 3.3V
-#define MQTT_TOPIC "homeassistant/sensor/MoistureSensor"
-#define DEVICE_ID "1"
-#define COMMON_STATE_TOPIC MQTT_TOPIC DEVICE_ID "/state"
+#define SENSOR_NAME "MoistureSensor"
+#define SENSOR_ID "1"
 
-const char broker[] = "192.168.178.28";
-const int mqtt_port = 1883;
+#define MQTT_BROKER_ADDRESS IPAddress(192,168,178,28)
+#define MQTT_BROKER_PORT 1883
 
 WiFiClient client;
-Adafruit_MQTT_Client mqtt_client(&client, broker, mqtt_port);
+HADevice device(SENSOR_NAME SENSOR_ID);
+HAMqtt mqtt(client, device);
 
-const char moisture_config [] = "{\"device_class\": \"moisture\", \"name\": \"Moisture\", \"state_topic\": \"" COMMON_STATE_TOPIC "\", \"unit_of_measurement\": \"%\", \"value_template\": \"{{ value_json.moisture}}\" }";
-const char battery_config []  = "{\"device_class\": \"battery\",  \"name\": \"Battery\",  \"state_topic\": \"" COMMON_STATE_TOPIC "\", \"unit_of_measurement\": \"%\", \"value_template\": \"{{ value_json.battery}}\" }";
-
-// Configuration for homeassitant: https://www.home-assistant.io/integrations/mqtt/
-Adafruit_MQTT_Publish mqtt_moisture_config = Adafruit_MQTT_Publish(&mqtt_client, MQTT_TOPIC DEVICE_ID "moisture/config"); // no slash infront of sensor
-Adafruit_MQTT_Publish mqtt_battery_config  = Adafruit_MQTT_Publish(&mqtt_client, MQTT_TOPIC DEVICE_ID "battery/config");  // no slash infront of sensor
-Adafruit_MQTT_Publish mqtt_common_state    = Adafruit_MQTT_Publish(&mqtt_client, COMMON_STATE_TOPIC);
+HASensorNumber mqtt_moisture_sensor("moisture", HASensorNumber::PrecisionP0);
+HASensorNumber mqtt_battery_sensor("battery", HASensorNumber::PrecisionP0);
 
 // TODO Possible optimization: Measure battery and moisture at once
 // !!! IMPORTANT !!! Manually change "MAXBUFFERSIZE" in "Adafruit_MQTT_Library\Adafruit_MQTT.h" or your mqtt-package will be stripped
@@ -56,62 +49,26 @@ void wait_for_wifi() {
 }
 
 void setup_mqtt() {
-  int8_t ret;
-  while ((ret = mqtt_client.connect()) != 0) {  // connect will return 0 for connected
-    Serial.println(mqtt_client.connectErrorString(ret));
-    Serial.println("Retrying MQTT connection in 2.5 seconds...");
-    mqtt_client.disconnect();
-    delay(2500);  // wait 2.5 seconds
-  }
-  Serial.println("MQTT Connected!");
+    mqtt.begin(MQTT_BROKER_ADDRESS, MQTT_BROKER_PORT);
+    mqtt.loop();
 }
 
 
-void send_to_mqtt(int moisture, int battery) {  
-  int ret = mqtt_battery_config.publish(battery_config);
-  if (!ret) {
-      Serial.println("Publishing battery config failed");
-  } else {
-      Serial.println("Publishing battery config went well!");
-  }
-
-  delay(50);  // Somehow it's needed, else battery will be ignored. Bug in Adafruit library?
-
-  ret = mqtt_moisture_config.publish(moisture_config);
-  if (!ret) {
-      Serial.println("Publishing moisture config failed");
-  } else {
-      Serial.println("Publishing moisture config went well!");
-  }
+void send_to_mqtt(int moisture, int battery) {
   
-  delay(50);  // Somehow it's needed, else battery will be ignored. Bug in Adafruit library?
-
-  // Finally publish sensor values
-  char buf[50];
-  String message = "{\"moisture\": " + String(moisture) + ", \"battery\":" + String(battery) + "}";
-  //String message = "{\"moisture\": 10.3, \"battery\": 9.1}";
-  Serial.println(message);
-  message.toCharArray(buf, message.length() + 1);
-  ret = mqtt_common_state.publish(buf);
-  if (!ret) {
-      Serial.println("Publishing payload failed");
-  } else {
-      Serial.println("Publishing payload went well!");
-  }
-/*
-  int ret = mqtt_moisture.publish(moisture);
+  int ret = mqtt_moisture_sensor.setValue(moisture);
   if (!ret) {
     Serial.println("Publishing moisture failed");
   } else {
     Serial.println("Publishing moisture went well!");
   }
-  delay(50);  // Somehow it's needed, else battery will be ignored. Bug in Adafruit library?
-  ret = mqtt_battery.publish(battery);
+  delay(50);  // Somehow it's needed, else battery will be ignored. Bug in Mosquitto? I tried several client-libraries...
+  ret = mqtt_battery_sensor.setValue(battery);
   if (!ret) {
     Serial.println("Publishing voltage failed");
   } else {
     Serial.println("Publishing voltage went well!");
-  }*/
+  }
 }
 
 /// Takes x measurement-point in y seconds. Returns average of x measurments
@@ -178,7 +135,7 @@ int get_battery_voltage() {
 void setup() {
   Serial.begin(115200);
 
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP_S * uS_TO_S_FACTOR);
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP_S * 1000000);
   Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP_S) + " Seconds");
 
   setup_pins();
