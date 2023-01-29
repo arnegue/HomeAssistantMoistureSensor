@@ -27,9 +27,6 @@ HAMqtt mqtt(client, device);
 HASensorNumber mqtt_moisture_sensor("moisture", HASensorNumber::PrecisionP0);
 HASensorNumber mqtt_battery_sensor("battery", HASensorNumber::PrecisionP0);
 
-// TODO Possible optimization: Measure battery and moisture at once
-// TODO send raw moisture value for calibration -> set-min, set-max?  // if so, how to save them internally after power cut?
-
 void setup_pins() {
   pinMode(BATTERY_ANALOG_PIN, INPUT);
   pinMode(MOISTURE_SENSOR_ANALOG_PIN, INPUT);
