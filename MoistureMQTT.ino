@@ -28,6 +28,9 @@ HASensorNumber mqtt_moisture_sensor("moisture", HASensorNumber::PrecisionP0);
 HASensorNumber mqtt_battery_sensor("battery", HASensorNumber::PrecisionP0);
 
 // TODO Possible optimization: Measure battery and moisture at once
+// TODO send raw moisture value for calibration -> set-min, set-max?  // if so, how to save them internally after power cut?
+// TODO battery of device is treated differently?
+
 // !!! IMPORTANT !!! Manually change "MAXBUFFERSIZE" in "Adafruit_MQTT_Library\Adafruit_MQTT.h" or your mqtt-package will be stripped
 void setup_pins() {
   pinMode(BATTERY_ANALOG_PIN, INPUT);
@@ -48,21 +51,35 @@ void wait_for_wifi() {
   Serial.println("Connected to WiFi");
 }
 
-void setup_mqtt() {
+void setup_mqtt() {  
+    device.setName("ESP32 Moisture Sensor");
+    device.setSoftwareVersion("1.0.0");
+    device.setManufacturer("Frost-Freak");
+    device.setModel("MoistureSensorV1");
+
+    mqtt_moisture_sensor.setName("Soil moisture");
+    mqtt_moisture_sensor.setUnitOfMeasurement("%");
+    mqtt_moisture_sensor.setIcon("mdi:water-percent");
+
+    mqtt_battery_sensor.setName("Battery level");
+    mqtt_battery_sensor.setUnitOfMeasurement("%");
+    mqtt_battery_sensor.setIcon("mdi:battery");
+
     mqtt.begin(MQTT_BROKER_ADDRESS, MQTT_BROKER_PORT);
     mqtt.loop();
 }
 
 
-void send_to_mqtt(int moisture, int battery) {
-  
+void send_to_mqtt(int moisture, int battery) {  
   int ret = mqtt_moisture_sensor.setValue(moisture);
   if (!ret) {
     Serial.println("Publishing moisture failed");
   } else {
     Serial.println("Publishing moisture went well!");
   }
+
   delay(50);  // Somehow it's needed, else battery will be ignored. Bug in Mosquitto? I tried several client-libraries...
+
   ret = mqtt_battery_sensor.setValue(battery);
   if (!ret) {
     Serial.println("Publishing voltage failed");
